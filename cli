@@ -1,0 +1,73 @@
+#!/usr/bin/env ruby
+require "thor"
+require 'active_support/concern'
+
+
+module MyCli
+  class SubThor < Thor
+    def self.banner(command, namespace = nil, subcommand = false)
+      sans_help = ARGV[0] == "help" ? ARGV[1] : ARGV[0]
+      "#{basename} #{sans_help} #{command.usage}"
+    end
+  end
+
+  $modules = []
+  CLASS_REGEX = /class\s(\w+)\s+\<\s+\SubThor/
+  begin
+    # load shared libraries
+    Dir.glob('./lib/*.rb').each do |file|
+      require file
+    end
+
+    # load module code
+    Dir.glob('./concerns/*.rb').each do |file|
+      require file
+    end
+
+    # load modules
+    Dir.glob('./modules/*.rb').each do |mod_file|
+      require mod_file
+      $modules << open(mod_file) do |file|
+        file.grep(CLASS_REGEX) do |line|
+          class_name = line.match(CLASS_REGEX)[1]
+          self.const_get(class_name)
+        end
+      end
+    end
+  rescue StandardError => e
+    puts "Unable to load module: #{e.message}"
+  end
+
+  class MyFoo < Thor
+    desc "foo", "puts foo"
+    def foo
+      test
+      puts 'foo'
+    end
+
+    desc "mofoo", "puts mofoo"
+    def mofoo
+      puts 'mofoo'
+    end
+
+    no_commands do
+      def test
+        puts '1'
+      end
+    end
+
+    # load in the subcommands
+    $modules.each do |mod_array|
+      mod_array.each do |klass|
+        begin
+          desc "#{klass::SUBCOMMAND} SUBCOMMAND", klass::DESCRIPTION
+          subcommand klass::SUBCOMMAND, klass
+        rescue StandardError => e
+          puts "Unable to load subcommand: #{e.message}"
+        end
+      end
+    end
+  end
+end
+
+MyCli::MyFoo.start(ARGV)
